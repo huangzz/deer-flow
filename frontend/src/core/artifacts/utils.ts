@@ -105,6 +105,55 @@ export function resolveMarkdownArtifactURL(src: string, threadId: string) {
   return `${resolveArtifactURL(decodeRelativeArtifactPath(path), threadId)}${suffix}`;
 }
 
+function parseRelativeArtifactReference(src: string) {
+  const { path: relativePath, suffix } = splitPathSuffix(src);
+  const normalizedPath = relativePath.replace(/^(?:\.\/)+/, "");
+  if (
+    !normalizedPath ||
+    normalizedPath.startsWith("/") ||
+    /^[a-z][a-z\d+.-]*:/i.test(normalizedPath) ||
+    normalizedPath.startsWith("//") ||
+    normalizedPath.split("/").includes("..")
+  ) {
+    return null;
+  }
+  return { decodedPath: decodeRelativeArtifactPath(normalizedPath), suffix };
+}
+
+/**
+ * True for a scheme-less relative reference (`report.md`, `./out/a.png`)
+ * that could name a thread artifact: no scheme, no leading `/`, no `..`
+ * segment, and a non-empty path (so `#anchor` / `?q` are excluded).
+ */
+export function isRelativeArtifactReference(src: string) {
+  return parseRelativeArtifactReference(src) !== null;
+}
+
+/**
+ * Resolves a relative reference to this thread's artifact URL when its path
+ * suffix-matches exactly one artifact. Returns `null` when `src` is not a
+ * relative reference or when zero / several artifacts match.
+ */
+export function resolveRelativeArtifactURL(
+  src: string,
+  threadId: string,
+  artifactPaths: readonly string[],
+): string | null {
+  const ref = parseRelativeArtifactReference(src);
+  if (!ref) {
+    return null;
+  }
+
+  const matches = artifactPaths.filter((path) =>
+    path.endsWith(`/${ref.decodedPath}`),
+  );
+  if (matches.length !== 1) {
+    return null;
+  }
+
+  return `${resolveArtifactURL(matches[0]!, threadId)}${ref.suffix}`;
+}
+
 export function resolveMessageImageURL(
   src: string,
   threadId: string,
@@ -114,27 +163,7 @@ export function resolveMessageImageURL(
     return resolveMarkdownArtifactURL(src, threadId);
   }
 
-  const { path: relativePath, suffix } = splitPathSuffix(src);
-  const normalizedPath = relativePath.replace(/^(?:\.\/)+/, "");
-  const decodedNormalizedPath = decodeRelativeArtifactPath(normalizedPath);
-  if (
-    !normalizedPath ||
-    normalizedPath.startsWith("/") ||
-    /^[a-z][a-z\d+.-]*:/i.test(normalizedPath) ||
-    normalizedPath.startsWith("//") ||
-    normalizedPath.split("/").includes("..")
-  ) {
-    return src;
-  }
-
-  const matches = artifactPaths.filter((path) =>
-    path.endsWith(`/${decodedNormalizedPath}`),
-  );
-  if (matches.length !== 1) {
-    return src;
-  }
-
-  return `${resolveArtifactURL(matches[0]!, threadId)}${suffix}`;
+  return resolveRelativeArtifactURL(src, threadId, artifactPaths) ?? src;
 }
 
 function staticDemoArtifactURL({

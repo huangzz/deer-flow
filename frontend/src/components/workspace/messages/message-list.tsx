@@ -99,6 +99,7 @@ import { useMaybeSidecar } from "../sidecar/context";
 import { SkillUsageMenu } from "../skill-usage/skill-usage-menu";
 import { Tooltip } from "../tooltip";
 
+import { MessageArtifactPathsContext } from "./artifact-paths-context";
 import { ConversationOutline } from "./conversation-outline";
 import {
   HumanInputCard,
@@ -107,6 +108,7 @@ import {
 import { MarkdownContent } from "./markdown-content";
 import { MessageGroup, getMessageGroupReasoningMessage } from "./message-group";
 import { MessageListItem } from "./message-list-item";
+import { useMessageMarkdownComponents } from "./message-markdown-components";
 import {
   MessageTokenUsageDebugList,
   MessageTokenUsageList,
@@ -1115,6 +1117,9 @@ export function MessageList({
   const artifactPaths = useStableArtifactPaths(
     extractArtifactsFromThread(thread),
   );
+  // Message text rendered outside MessageListItem (clarification text, the
+  // present_files message) resolves artifact links and images the same way.
+  const messageMarkdownComponents = useMessageMarkdownComponents(threadId);
 
   if (thread.isThreadLoading && messages.length === 0) {
     return <MessageListSkeleton />;
@@ -1418,10 +1423,15 @@ export function MessageList({
                     group,
                     groupIndex,
                     <div className="w-full">
-                      <MarkdownContent
-                        content={extractContentFromMessage(message)}
-                        isLoading={thread.isLoading}
-                      />
+                      <MessageArtifactPathsContext.Provider
+                        value={artifactPaths}
+                      >
+                        <MarkdownContent
+                          content={extractContentFromMessage(message)}
+                          isLoading={thread.isLoading}
+                          components={messageMarkdownComponents}
+                        />
+                      </MessageArtifactPathsContext.Provider>
                       {renderTokenUsage({
                         messages: group.messages,
                         turnUsageMessages,
@@ -1459,11 +1469,16 @@ export function MessageList({
                   groupIndex,
                   <div className="w-full">
                     {group.messages[0] && hasContent(group.messages[0]) && (
-                      <MarkdownContent
-                        content={extractContentFromMessage(group.messages[0])}
-                        isLoading={thread.isLoading}
-                        className="mb-4"
-                      />
+                      <MessageArtifactPathsContext.Provider
+                        value={artifactPaths}
+                      >
+                        <MarkdownContent
+                          content={extractContentFromMessage(group.messages[0])}
+                          isLoading={thread.isLoading}
+                          className="mb-4"
+                          components={messageMarkdownComponents}
+                        />
+                      </MessageArtifactPathsContext.Provider>
                     )}
                     <ArtifactFileList
                       archiveDownloadsEnabled={

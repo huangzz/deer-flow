@@ -8,14 +8,7 @@ import {
   ThumbsUpIcon,
   XIcon,
 } from "lucide-react";
-import {
-  memo,
-  useCallback,
-  useId,
-  useMemo,
-  useState,
-  type ImgHTMLAttributes,
-} from "react";
+import { memo, useCallback, useId, useMemo, useState } from "react";
 
 import { Loader } from "@/components/ai-elements/loader";
 import {
@@ -32,10 +25,7 @@ import {
   upsertFeedback,
   type FeedbackData,
 } from "@/core/api/feedback";
-import {
-  resolveArtifactURL,
-  resolveMessageImageURL,
-} from "@/core/artifacts/utils";
+import { resolveArtifactURL } from "@/core/artifacts/utils";
 import { extractCitationSources } from "@/core/citations/sources";
 import { readConversationReferences } from "@/core/conversation-references";
 import { useI18n } from "@/core/i18n/hooks";
@@ -65,9 +55,10 @@ import { ReferenceAttachmentSummary } from "../sidecar/reference-attachments";
 import { SlashSkillChip } from "../slash-skill-chip";
 import { Tooltip } from "../tooltip";
 
+import { MessageArtifactPathsContext } from "./artifact-paths-context";
 import { KnowledgeScopeSummary } from "./knowledge-scope-summary";
 import { MarkdownContent } from "./markdown-content";
-import { createMarkdownLinkComponent } from "./markdown-link";
+import { useMessageMarkdownComponents } from "./message-markdown-components";
 import { MessageReasoning } from "./message-reasoning";
 
 function FeedbackButtons({
@@ -313,60 +304,6 @@ export function MessageListItem({
   );
 }
 
-/**
- * Custom image component that handles artifact URLs
- */
-function MessageImage({
-  src,
-  alt,
-  threadId,
-  artifactPaths,
-  maxWidth = "90%",
-  ...props
-}: React.ImgHTMLAttributes<HTMLImageElement> & {
-  threadId: string;
-  artifactPaths: readonly string[];
-  maxWidth?: string;
-}) {
-  if (!src) return null;
-
-  // `maxWidth` is applied inline rather than through a `max-w-[${maxWidth}]`
-  // class: Tailwind's JIT only generates utilities it can find as literal
-  // source tokens, so an interpolated arbitrary value would never be emitted.
-  const imgClassName = cn("overflow-hidden rounded-lg", props.className);
-  const imgStyle: React.CSSProperties = { maxWidth, ...props.style };
-
-  if (typeof src !== "string") {
-    return (
-      <img
-        {...props}
-        className={imgClassName}
-        style={imgStyle}
-        src={src}
-        alt={alt}
-        loading="lazy"
-        decoding="async"
-      />
-    );
-  }
-
-  const url = resolveMessageImageURL(src, threadId, artifactPaths);
-
-  return (
-    <a href={url} target="_blank" rel="noopener noreferrer">
-      <img
-        {...props}
-        className={imgClassName}
-        style={imgStyle}
-        src={url}
-        alt={alt}
-        loading="lazy"
-        decoding="async"
-      />
-    </a>
-  );
-}
-
 function HumanMessageText({ content }: { content: string }) {
   // `parseSlashSkillReference` is a pure regex gate (no data subscription), so
   // the overwhelmingly common plain-text human message never subscribes to the
@@ -433,20 +370,7 @@ function MessageContent_({
 }) {
   const { t } = useI18n();
   const isHuman = message.type === "human";
-  const components = useMemo(
-    () => ({
-      img: (props: ImgHTMLAttributes<HTMLImageElement>) => (
-        <MessageImage
-          {...props}
-          threadId={threadId}
-          artifactPaths={artifactPaths}
-          maxWidth="90%"
-        />
-      ),
-      a: createMarkdownLinkComponent(threadId),
-    }),
-    [artifactPaths, threadId],
-  );
+  const components = useMessageMarkdownComponents(threadId);
 
   const rawContent = extractContentFromMessage(message);
   const reasoningContent = extractReasoningContentFromMessage(message);
@@ -640,12 +564,14 @@ function MessageContent_({
           {reasoningContent}
         </MessageReasoning>
       )}
-      <MarkdownContent
-        content={contentToDisplay}
-        isLoading={isLoading}
-        className="my-3"
-        components={components}
-      />
+      <MessageArtifactPathsContext.Provider value={artifactPaths}>
+        <MarkdownContent
+          content={contentToDisplay}
+          isLoading={isLoading}
+          className="my-3"
+          components={components}
+        />
+      </MessageArtifactPathsContext.Provider>
       <CitationSourcesPanel sources={citationSources} />
       <KnowledgeSourcesPanel content={contentToDisplay} />
       {message.type === "ai" && showWorkspaceChanges && (

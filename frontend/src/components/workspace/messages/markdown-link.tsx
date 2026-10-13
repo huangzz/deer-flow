@@ -1,10 +1,20 @@
-import type { AnchorHTMLAttributes, ComponentProps } from "react";
+import {
+  useContext,
+  type AnchorHTMLAttributes,
+  type ComponentProps,
+} from "react";
 
-import { resolveMarkdownArtifactURL } from "@/core/artifacts/utils";
+import {
+  isRelativeArtifactReference,
+  resolveMarkdownArtifactURL,
+  resolveRelativeArtifactURL,
+} from "@/core/artifacts/utils";
 import { knowledgeSourceId } from "@/core/knowledge/sources";
 import { cn } from "@/lib/utils";
 
 import { CitationLink, extractReactNodeText } from "../citations/citation-link";
+
+import { MessageArtifactPathsContext } from "./artifact-paths-context";
 
 /**
  * Schemes we are willing to render as a navigable ``<a href=...>``.
@@ -85,12 +95,20 @@ function isExternalUrl(href: string | undefined): boolean {
  * Builds the `a` renderer shared by message content and generic markdown.
  * Passing a `threadId` also resolves `/mnt/` artifact links; without it those
  * links fall through to the default external-link handling.
+ *
+ * Inside a `MessageArtifactPathsContext` provider, scheme-less relative links
+ * (`report.md`, `./out/report.md`) are resolved against the thread's
+ * artifacts with the same unique-suffix rule as message images. Left as-is,
+ * the browser would resolve them against the chat route
+ * (`/workspace/chats/report.md`) and navigate the app to a non-existent
+ * thread.
  */
 export function createMarkdownLinkComponent(threadId?: string) {
   return function MarkdownLink({
     href,
     ...props
   }: AnchorHTMLAttributes<HTMLAnchorElement>) {
+    const artifactPaths = useContext(MessageArtifactPathsContext);
     // Reject unsafe schemes up front so a prompt-injected / pasted href can
     // never reach the rendered anchor — including through the citation
     // branch (which renders <a href={href}> directly). Check before the
@@ -125,28 +143,56 @@ export function createMarkdownLinkComponent(threadId?: string) {
         );
       }
     }
+    // Artifact links (`/mnt/...` and relative references to a thread
+    // artifact) open the artifact in a new tab and keep the regular link
+    // styling so they read as clickable.
+    let resolvedHref = href;
+    let opensInNewTab = isExternalUrl(href);
     if (threadId && href?.startsWith("/mnt/")) {
-      return (
-        <a
-          {...props}
-          href={resolveMarkdownArtifactURL(href, threadId)}
-          target="_blank"
-          rel="noopener noreferrer"
-        />
+      resolvedHref = resolveMarkdownArtifactURL(href, threadId);
+      opensInNewTab = true;
+    } else if (
+      threadId &&
+      artifactPaths &&
+      href &&
+      isRelativeArtifactReference(href)
+    ) {
+      const artifactURL = resolveRelativeArtifactURL(
+        href,
+        threadId,
+        artifactPaths,
       );
+      if (!artifactURL) {
+        // No unique artifact matches (none yet, or several). Render the label
+        // as inert text: a relative href here would navigate the app to
+        // `/workspace/chats/<href>`.
+        const { className, children } = props;
+        return (
+          <span
+            className={cn(
+              "text-muted-foreground underline decoration-dotted underline-offset-2",
+              className,
+            )}
+            title={`No artifact in this conversation matches ${href}`}
+          >
+            {children}
+          </span>
+        );
+      }
+      resolvedHref = artifactURL;
+      opensInNewTab = true;
     }
     const { className, target, rel, ...rest } = props;
-    const external = isExternalUrl(href);
     return (
       <a
         {...rest}
-        href={href}
+        href={resolvedHref}
         className={cn(
           "text-primary decoration-primary/30 hover:decoration-primary/60 underline underline-offset-2 transition-colors",
           className,
         )}
-        target={target ?? (external ? "_blank" : undefined)}
-        rel={rel ?? (external ? "noopener noreferrer" : undefined)}
+        target={target ?? (opensInNewTab ? "_blank" : undefined)}
+        rel={rel ?? (opensInNewTab ? "noopener noreferrer" : undefined)}
       />
     );
   };
