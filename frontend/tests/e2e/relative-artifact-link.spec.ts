@@ -217,4 +217,11 @@ test("reopened agent thread without state artifacts still resolves links", async
     );
   }
   await expect(page.locator("span.decoration-dotted")).toHaveCount(0);
+
+  // The right-side file panel (and its header button) is fed the same way.
+  await page.getByTestId("artifact-trigger").click();
+  const panel = page.locator("#artifacts");
+  for (const file of ["notes.md", "package.zip"]) {
+    await expect(panel.getByText(file, { exact: true })).toBeVisible();
+  }
 });

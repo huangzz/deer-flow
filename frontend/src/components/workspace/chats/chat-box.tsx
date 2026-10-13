@@ -22,6 +22,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { collectThreadArtifactPaths } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import { env } from "@/env";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -109,6 +110,10 @@ function ChatBox(props: ChatBoxProps) {
   );
 }
 
+function sameArtifactList(a: readonly string[], b: readonly string[]) {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 const ChatBoxContent: React.FC<ChatBoxProps> = ({
   children,
   threadId,
@@ -137,9 +142,20 @@ const ChatBoxContent: React.FC<ChatBoxProps> = ({
   const browserViewOpen = browserEnabled && (browserView?.open ?? false);
 
   const [autoSelectFirstArtifact, setAutoSelectFirstArtifact] = useState(true);
+  // A reopened thread's values carry no artifacts (the gateway's /history does
+  // not return them), so merge the present_files paths from the messages;
+  // otherwise the file panel and its header button disappear after a reload.
+  const stateArtifacts = thread.values.artifacts;
+  const collectedThreadArtifacts = useMemo(() => {
+    const collected = collectThreadArtifactPaths(
+      Array.isArray(stateArtifacts) ? stateArtifacts : [],
+      thread.messages,
+    );
+    return collected.length > 0 ? [...collected] : stateArtifacts;
+  }, [stateArtifacts, thread.messages]);
   useEffect(() => {
-    const threadArtifacts = Array.isArray(thread.values.artifacts)
-      ? thread.values.artifacts
+    const threadArtifacts = Array.isArray(collectedThreadArtifacts)
+      ? collectedThreadArtifacts
       : undefined;
 
     if (threadIdRef.current !== threadId) {
@@ -150,7 +166,11 @@ const ChatBoxContent: React.FC<ChatBoxProps> = ({
     // Update artifacts from the current thread
     // An empty initial state must not erase artifacts restored by the provider
     // before the persisted thread state has arrived.
-    if (threadArtifacts && threadArtifacts.length > 0) {
+    if (
+      threadArtifacts &&
+      threadArtifacts.length > 0 &&
+      !sameArtifactList(artifacts, threadArtifacts)
+    ) {
       setArtifacts(threadArtifacts);
     }
 
@@ -178,7 +198,8 @@ const ChatBoxContent: React.FC<ChatBoxProps> = ({
     selectArtifact,
     selectedArtifact,
     setArtifacts,
-    thread.values.artifacts,
+    collectedThreadArtifacts,
+    artifacts,
   ]);
 
   const artifactPanelOpen = useMemo(() => {
