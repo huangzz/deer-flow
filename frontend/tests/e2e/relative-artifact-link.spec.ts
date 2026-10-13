@@ -146,3 +146,75 @@ test("links in the present_files message text resolve to artifacts", async ({
     ).toContain(`/api/threads/${THREAD_ID}/artifacts${REPORT_PATH}`);
   }
 });
+
+// A reopened thread gets its values from the gateway's /history, which carries
+// title / thread_data / messages but not `artifacts`. Links must still resolve
+// from the present_files call in the messages (agent chat route).
+test("reopened agent thread without state artifacts still resolves links", async ({
+  page,
+}) => {
+  const files = [
+    REPORT_PATH,
+    "/mnt/user-data/outputs/notes.md",
+    "/mnt/user-data/outputs/package.zip",
+  ];
+  mockLangGraphAPI(page, {
+    agents: [{ name: "report-agent", display_name: "Report agent" }],
+    threads: [
+      {
+        thread_id: THREAD_ID,
+        title: "Reopened thread",
+        agent_name: "report-agent",
+        // No `artifacts`: mirrors the real /history payload.
+        messages: [
+          {
+            type: "human",
+            id: "msg-human-reopened",
+            content: [{ type: "text", text: "Deliver the files" }],
+          },
+          {
+            type: "ai",
+            id: "msg-ai-reopened",
+            run_id: "run-reopened",
+            content: [
+              "All three deliverables are ready.",
+              "### Downloads",
+              `- [Full report](./${REPORT_NAME})`,
+              "- [Notes](./notes.md)",
+              "- [Calculation package](./package.zip)",
+            ].join("\n\n"),
+            tool_calls: [
+              {
+                id: "present-reopened",
+                name: "present_files",
+                args: { filepaths: files },
+              },
+            ],
+          },
+          {
+            type: "tool",
+            id: "msg-tool-reopened",
+            name: "present_files",
+            tool_call_id: "present-reopened",
+            content: "Successfully presented files",
+          },
+        ],
+      },
+    ],
+  });
+
+  await page.goto(`/workspace/agents/report-agent/chats/${THREAD_ID}`);
+  for (const [name, path] of [
+    ["Full report", files[0]],
+    ["Notes", files[1]],
+    ["Calculation package", files[2]],
+  ] as const) {
+    const link = page.getByRole("link", { name, exact: true });
+    await expect(link).toBeVisible({ timeout: 30_000 });
+    await expect(link).toHaveAttribute("target", "_blank");
+    expect(decodeURIComponent((await link.getAttribute("href")) ?? "")).toBe(
+      `/api/threads/${THREAD_ID}/artifacts${path}`,
+    );
+  }
+  await expect(page.locator("span.decoration-dotted")).toHaveCount(0);
+});

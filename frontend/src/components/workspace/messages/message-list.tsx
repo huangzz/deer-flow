@@ -26,7 +26,10 @@ import {
 } from "@/components/ai-elements/conversation";
 import { Button } from "@/components/ui/button";
 import { KnowledgeSourcesProvider } from "@/components/workspace/citations/knowledge-source";
-import { extractArtifactsFromThread } from "@/core/artifacts/utils";
+import {
+  collectThreadArtifactPaths,
+  extractArtifactsFromThread,
+} from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import { getArtifactArchiveCandidatesByGroupIndex } from "@/core/messages/artifact-archive";
 import {
@@ -1114,9 +1117,14 @@ export function MessageList({
     ],
   );
 
-  const artifactPaths = useStableArtifactPaths(
-    extractArtifactsFromThread(thread),
+  // Merge present_files paths: a reopened thread's values carry no artifacts
+  // (see collectThreadArtifactPaths).
+  const stateArtifactPaths = extractArtifactsFromThread(thread);
+  const collectedArtifactPaths = useMemo(
+    () => collectThreadArtifactPaths(stateArtifactPaths, messages),
+    [stateArtifactPaths, messages],
   );
+  const artifactPaths = useStableArtifactPaths(collectedArtifactPaths);
   // Message text rendered outside MessageListItem (clarification text, the
   // present_files message) resolves artifact links and images the same way.
   const messageMarkdownComponents = useMessageMarkdownComponents(threadId);

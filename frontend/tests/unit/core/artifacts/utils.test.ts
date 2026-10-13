@@ -291,6 +291,44 @@ describe("artifact URL helpers", () => {
     }
   });
 
+  test("collectThreadArtifactPaths merges present_files paths when state has none", async () => {
+    const { collectThreadArtifactPaths } = await loadFreshArtifactUtils();
+    const state = ["/mnt/user-data/outputs/a.md"];
+    const messages = [
+      { type: "human", id: "h", content: "go" },
+      {
+        type: "ai",
+        id: "a1",
+        content: "",
+        tool_calls: [
+          {
+            id: "p1",
+            name: "present_files",
+            args: {
+              filepaths: [
+                "/mnt/user-data/outputs/a.md",
+                "/mnt/user-data/outputs/b.zip",
+                "outputs/relative-is-ignored.md",
+              ],
+            },
+          },
+        ],
+      },
+    ] as Parameters<typeof collectThreadArtifactPaths>[1];
+
+    // Reopened thread: /history values carry no artifacts.
+    expect(collectThreadArtifactPaths([], messages)).toEqual([
+      "/mnt/user-data/outputs/a.md",
+      "/mnt/user-data/outputs/b.zip",
+    ]);
+    expect(collectThreadArtifactPaths(state, messages)).toEqual([
+      "/mnt/user-data/outputs/a.md",
+      "/mnt/user-data/outputs/b.zip",
+    ]);
+    // No present_files: the state array is returned as-is (stable identity).
+    expect(collectThreadArtifactPaths(state, [messages[0]!])).toBe(state);
+  });
+
   test("does not rewrite unregistered, ambiguous, or external message images", async () => {
     const { resolveMessageImageURL } = await loadFreshArtifactUtils();
 

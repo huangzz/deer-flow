@@ -1,4 +1,7 @@
+import type { Message } from "@langchain/langgraph-sdk";
+
 import { getBackendBaseURL } from "../config";
+import { extractPresentFilesFromMessage } from "../messages/utils";
 import { isStaticWebsiteOnly } from "../static-mode";
 import type { AgentThreadState } from "../threads";
 
@@ -89,6 +92,32 @@ export function extractArtifactsFromThread(thread: {
   values: Pick<AgentThreadState, "artifacts">;
 }) {
   return thread.values.artifacts ?? EMPTY_ARTIFACT_PATHS;
+}
+
+/**
+ * Artifact paths for resolving links and images in message text.
+ *
+ * A reopened thread gets its values from the gateway's `/history`, which only
+ * carries `title` / `thread_data` / `messages` (plus goal fields) — not
+ * `artifacts`; only live `values` stream frames and `GET /state` include them.
+ * `thread.values.artifacts` is therefore empty after a reload. The
+ * `present_files` calls that populate `artifacts` on the backend are still in
+ * the messages, so their absolute `/mnt/` paths are merged in here.
+ */
+export function collectThreadArtifactPaths(
+  stateArtifacts: readonly string[],
+  messages: readonly Message[],
+): readonly string[] {
+  const presented = messages
+    .flatMap((message) => extractPresentFilesFromMessage(message))
+    .filter(
+      (path): path is string =>
+        typeof path === "string" && path.startsWith("/mnt/"),
+    );
+  if (presented.length === 0) {
+    return stateArtifacts;
+  }
+  return [...new Set([...stateArtifacts, ...presented])];
 }
 
 export function resolveArtifactURL(absolutePath: string, threadId: string) {
